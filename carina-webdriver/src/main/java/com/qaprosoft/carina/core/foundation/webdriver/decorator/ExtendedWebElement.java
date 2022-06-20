@@ -115,30 +115,35 @@ public class ExtendedWebElement implements IWebElement {
     private String formatValues = "";
 
     private LocatorConverter caseInsensitiveConverter;
+    
+    public ExtendedWebElement(By by, String name, WebDriver driver, SearchContext searchContext) {
+        if (by == null) {
+            throw new RuntimeException("By couldn't be null!");
+        }
+        if (driver == null) {
+            throw new RuntimeException("driver couldn't be null!");
+        }
+
+        if (searchContext == null) {
+            throw new RuntimeException("review stacktrace to analyze why searchContext is null");
+        }
+
+        this.by = by;
+        this.name = name;
+        this.driver = driver;
+        this.searchContext = searchContext;
+    }
+
+    public ExtendedWebElement(By by, String name, WebDriver driver, SearchContext searchContext, Object[] formatValues) {
+        this(by, name, driver, searchContext);
+        this.formatValues = Arrays.toString(formatValues);
+    }
 
     public ExtendedWebElement(WebElement element, String name, By by) {
         this(element, name);
         this.by = by;
     }
 
-    public ExtendedWebElement(By by, String name) {
-    	this.by = by;
-    	this.name = name;
-    }
-    
-    public ExtendedWebElement(By by, String name, WebDriver driver) {
-    	this.by = by;
-    	this.name = name;
-    	this.driver = driver;
-    }
-    
-    public ExtendedWebElement(By by, String name, WebDriver driver, SearchContext searchContext) {
-        this.by = by;
-        this.name = name;
-        this.driver = driver;
-        this.searchContext = searchContext;
-    }
-    
     public ExtendedWebElement(WebElement element, String name) {
     	this.name = name;
         this.element = element;
@@ -205,7 +210,9 @@ public class ExtendedWebElement implements IWebElement {
 					locatorField.setAccessible(true);
 
 					locator = (ExtendedElementLocator) locatorField.get(innerProxy);
-					this.isLocalized = locator.isLocalized();
+                    // #1691 fix L10N Localized annotation does not work when elements are nested and the
+                    // parent element does not have an annotation.
+					//this.isLocalized = locator.isLocalized();
 
 					searchContextField = locator.getClass().getDeclaredField("searchContext");
 					searchContextField.setAccessible(true);
@@ -270,23 +277,14 @@ public class ExtendedWebElement implements IWebElement {
 		} catch (Throwable thr) {
 			thr.printStackTrace();
 			LOGGER.error("Unable to get Driver, searchContext and By via reflection!", thr);
-		}
-		
-    	if (this.searchContext == null) {
-			try {
-				throw new RuntimeException("review stacktrace to analyze why searchContext is not populated correctly via reflection!");
-			} catch (Throwable thr) {
-			    LOGGER.warn("this.searchContext is null!", thr);
-			}
-    	}
+        } finally {
+            if (this.searchContext == null) {
+                throw new RuntimeException("review stacktrace to analyze why searchContext is not populated correctly via reflection!");
+            }
+        }
+
     }
 
-    
-
-    public ExtendedWebElement(By by, String name, WebDriver driver, SearchContext searchContext, Object[] formatValues) {
-        this(by, name, driver, searchContext);
-        this.formatValues = Arrays.toString(formatValues);
-    }
 
     public WebElement getElement() {
         if (this.element == null) {
@@ -354,19 +352,13 @@ public class ExtendedWebElement implements IWebElement {
      * @return true if condition happen.
      */
     private boolean waitUntil(ExpectedCondition<?> condition, long timeout) {
-        long retryInterval = RETRY_TIME;
         if (timeout < 1) {
             LOGGER.warn("Fluent wait less than 1sec timeout might hangs! Updating to 1 sec.");
             timeout = 1;
         }
         
-        if (timeout >= 3 && timeout <= 10) {
-            retryInterval = 500;
-        }
-        if (timeout > 10) {
-            retryInterval = 1000;
-        }
-        // Wait<WebDriver> wait = new WebDriverWait(getDriver(), timeout, RETRY_TIME)
+        long retryInterval = getRetryInterval(timeout);
+        
         //try to use better tickMillis clock
         Wait<WebDriver> wait = new WebDriverWait(getDriver(), 
                 java.time.Clock.tickMillis(java.time.ZoneId.systemDefault()), 
@@ -403,14 +395,15 @@ public class ExtendedWebElement implements IWebElement {
     }
 
     private WebElement findElement() {
-        // as we still provide several ways to init ExtendedWebElement without searchContext we have to use "if" operator and getDriver()
-        // to use only searchContext we must remove all findExtendedWebElement(s) methods in DriverHelper which is not so simple
-            List<WebElement> elements = searchContext.findElements(by);
-
-            if (elements.isEmpty()) {
-                throw new NoSuchElementException(SpecialKeywords.NO_SUCH_ELEMENT_ERROR + by.toString());
-            }
-            this.element = elements.get(0);
+        List<WebElement> elements = searchContext.findElements(this.by);
+        if (elements.isEmpty()) {
+            throw new NoSuchElementException(SpecialKeywords.NO_SUCH_ELEMENT_ERROR + this.by.toString());
+        }
+        if (elements.size() > 1) {
+            //TODO: think about moving into the debug or info level
+            LOGGER.warn(String.format("returned first but found %d elements by xpath: %s", elements.size(), getBy()));
+        }
+        this.element = elements.get(0);
 
         return element;
     }
@@ -1131,28 +1124,25 @@ public class ExtendedWebElement implements IWebElement {
     }
 
     public boolean waitUntilElementDisappear(final long timeout) {
-    	try {
-        	//TODO: investigate maybe searchContext better to use here!
-    		//do direct selenium/appium search without any extra validations
-            if (searchContext != null) {
-                //TODO: use-case when format method is used. Need investigate howto init context in this case as well
-                element = searchContext.findElement(by);
+        try {
+            if (this.element == null) {
+                // if element not found it will cause NoSuchElementException
+                findElement();
             } else {
-                LOGGER.debug("waitUntilElementDisappear: searchContext is null for " + getNameWithLocator());
-                element = getDriver().findElement(by);  
+                // if element is stale, it will cause StaleElementReferenceException
+                this.element.isDisplayed();
             }
-    	} catch (NoSuchElementException e) {
-    		//element not present so means disappear
-    		return true;
-    	} catch (Exception e) {
-    		//element not present so means disappear
-    		LOGGER.error("Investigate use-case with disappeared element later!", e);
-    		return true;
-    	}
 
-        return waitUntil(ExpectedConditions.or(ExpectedConditions.invisibilityOfElementLocated(getBy()),
-                ExpectedConditions.stalenessOf(element),
-                ExpectedConditions.invisibilityOf(element)), timeout);
+            return waitUntil(ExpectedConditions.or(ExpectedConditions.stalenessOf(this.element),
+                    ExpectedConditions.invisibilityOf(this.element)),
+                    timeout);
+
+        } catch (NoSuchElementException | StaleElementReferenceException e) {
+            // element not present so means disappear
+            return true;
+        }
+
+
     }
 
     public ExtendedWebElement format(Object... objects) {
@@ -1418,8 +1408,22 @@ public class ExtendedWebElement implements IWebElement {
             L10N.verify(this);
         }
 
-        this.element = getElement();
-        return overrideAction(actionName, inputArgs);
+        Object output = null;
+
+        try {
+            this.element = getElement();
+            output = overrideAction(actionName, inputArgs);
+        } catch (StaleElementReferenceException e) {
+            //TODO: analyze mobile testing for staled elements. Potentially it should be fixed by appium java client already
+            // sometime Appium instead printing valid StaleElementException generate java.lang.ClassCastException:
+            // com.google.common.collect.Maps$TransformedEntriesMap cannot be cast to java.lang.String
+            LOGGER.debug("catched StaleElementReferenceException: ", e);
+            // try to find again using driver context and do action
+            element = this.findElement();
+            output = overrideAction(actionName, inputArgs);
+        }
+
+        return output;
 	}
 
 	// single place for all supported UI actions in carina core
@@ -1839,4 +1843,16 @@ public class ExtendedWebElement implements IWebElement {
         }
         return waitCondition;
     }
+    
+    private long getRetryInterval(long timeout) {
+        long retryInterval = RETRY_TIME;
+        if (timeout >= 3 && timeout <= 10) {
+            retryInterval = 500;
+        }
+        if (timeout > 10) {
+            retryInterval = 1000;
+        }
+        return retryInterval;
+    }
+
 }

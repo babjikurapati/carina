@@ -15,7 +15,7 @@
  *******************************************************************************/
 package com.qaprosoft.carina.core.foundation.webdriver;
 
-import java.awt.*;
+import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -48,11 +48,11 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoAlertPresentException;
 import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.NoSuchSessionException;
 import org.openqa.selenium.NoSuchWindowException;
 import org.openqa.selenium.ScriptTimeoutException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.UnhandledAlertException;
+import org.openqa.selenium.UnsupportedCommandException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
@@ -151,44 +151,26 @@ public class DriverHelper {
         final String decryptedURL = getEnvArgURL(cryptoTool.decryptByPattern(url, CRYPTO_PATTERN));
         this.pageURL = decryptedURL;
         WebDriver drv = getDriver();
+        
+        setPageLoadTimeout(drv, timeout);
         DriverListener.setMessages(Messager.OPENED_URL.getMessage(url), Messager.NOT_OPENED_URL.getMessage(url));
         
         // [VD] there is no sense to use fluent wait here as selenium just don't return something until page is ready!
         // explicitly limit time for the openURL operation
-        Future<?> future = Executors.newSingleThreadExecutor().submit(new Callable<Void>() {
-            public Void call() {
-                try {
-                    Messager.OPENING_URL.info(url);
-                    drv.get(decryptedURL);
-                } catch (UnhandledAlertException e) {
-                    drv.switchTo().alert().accept();
-                }
-                return null;
-            }
-        });
-
         try {
-            LOGGER.debug("starting driver.get call...");
-            future.get(timeout, TimeUnit.SECONDS);
-        } catch (java.util.concurrent.TimeoutException e) {
-            String message = "Unable to open url during " + timeout + "sec!";
-            LOGGER.error(message);
-            Assert.fail(message, e);
-        } catch (InterruptedException e) {
-            String message = "Unable to open url during " + timeout + "sec!";
-            LOGGER.error(message);
-            Assert.fail(message, e);
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException e) {
-            String message = "ExecutionException error on open url: " + e.getMessage();
-            LOGGER.error(message);
-            Assert.fail(message, e);
+            Messager.OPENING_URL.info(url);
+            drv.get(decryptedURL);
+        } catch (UnhandledAlertException e) {
+            drv.switchTo().alert().accept();
+        } catch (TimeoutException e) {
+            trigger("window.stop();"); //try to cancel page loading
+            Assert.fail("Unable to open url during " + timeout + "sec!");
         } catch (Exception e) {
-            String message = "Undefined error on open url detected: " + e.getMessage();
-            LOGGER.error(message);
-            Assert.fail(message, e);
+            Assert.fail("Undefined error on open url detected: " + e.getMessage(), e);
         } finally {
-            LOGGER.debug("finished driver.get call.");            
+            //restore default pageLoadTimeout driver timeout
+            setPageLoadTimeout(drv, getPageLoadTimeout());
+            LOGGER.debug("finished driver.get call.");
         }
     }
 
@@ -976,7 +958,8 @@ public class DriverHelper {
      */
     public void acceptAlert() {
         WebDriver drv = getDriver();
-        Wait<WebDriver> wait = new WebDriverWait(drv, EXPLICIT_TIMEOUT, RETRY_TIME);
+        long retryInterval = getRetryInterval(EXPLICIT_TIMEOUT);
+        Wait<WebDriver> wait = new WebDriverWait(drv, EXPLICIT_TIMEOUT, retryInterval);
         try {
             wait.until((Function<WebDriver, Object>) dr -> isAlertPresent());
             drv.switchTo().alert().accept();
@@ -991,7 +974,8 @@ public class DriverHelper {
      */
     public void cancelAlert() {
         WebDriver drv = getDriver();
-        Wait<WebDriver> wait = new WebDriverWait(drv, EXPLICIT_TIMEOUT, RETRY_TIME);
+        long retryInterval = getRetryInterval(EXPLICIT_TIMEOUT);
+        Wait<WebDriver> wait = new WebDriverWait(drv, EXPLICIT_TIMEOUT, retryInterval);
         try {
             wait.until((Function<WebDriver, Object>) dr -> isAlertPresent());
             drv.switchTo().alert().dismiss();
@@ -1025,7 +1009,9 @@ public class DriverHelper {
     public boolean isPageOpened(final AbstractPage page, long timeout) {
         boolean result;
         final WebDriver drv = getDriver();
-        Wait<WebDriver> wait = new WebDriverWait(drv, timeout, RETRY_TIME);
+        
+        long retryInterval = getRetryInterval(timeout);        
+        Wait<WebDriver> wait = new WebDriverWait(drv, timeout, retryInterval);
         try {
             wait.until((Function<WebDriver, Object>) dr -> LogicUtils.isURLEqual(page.getPageURL(), drv.getCurrentUrl()));
             result = true;
@@ -1129,22 +1115,26 @@ public class DriverHelper {
     /**
      * Find Extended Web Element on page using By.
      * 
+     * @deprecated
      * @param by
      *            Selenium By locator
      * @return ExtendedWebElement if exists otherwise null.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public ExtendedWebElement findExtendedWebElement(By by) {
         return findExtendedWebElement(by, by.toString(), EXPLICIT_TIMEOUT);
     }
 
     /**
      * Find Extended Web Element on page using By.
-     * 
+     *
+     * @deprecated
      * @param by
      *            Selenium By locator
      * @param timeout to wait
      * @return ExtendedWebElement if exists otherwise null.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public ExtendedWebElement findExtendedWebElement(By by, long timeout) {
         return findExtendedWebElement(by, by.toString(), timeout);
     }
@@ -1152,19 +1142,22 @@ public class DriverHelper {
     /**
      * Find Extended Web Element on page using By.
      * 
+     * @deprecated
      * @param by
      *            Selenium By locator
      * @param name
      *            Element name
      * @return ExtendedWebElement if exists otherwise null.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public ExtendedWebElement findExtendedWebElement(final By by, String name) {
         return findExtendedWebElement(by, name, EXPLICIT_TIMEOUT);
     }
 
     /**
      * Find Extended Web Element on page using By.
-     * 
+     *
+     * @deprecated
      * @param by
      *            Selenium By locator
      * @param name
@@ -1173,6 +1166,7 @@ public class DriverHelper {
      *            Timeout to find
      * @return ExtendedWebElement if exists otherwise null.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public ExtendedWebElement findExtendedWebElement(final By by, String name, long timeout) {
 		DriverListener.setMessages(Messager.ELEMENT_FOUND.getMessage(name),
 				Messager.ELEMENT_NOT_FOUND.getMessage(name));
@@ -1182,22 +1176,26 @@ public class DriverHelper {
     		return null;
     	}
 
-    	return new ExtendedWebElement(by, name, getDriver());
+    	return new ExtendedWebElement(by, name, getDriver(), getDriver());
     }
 
     /**
      * Find List of Extended Web Elements on page using By and explicit timeout.
-     * 
+     *
+     * @deprecated
      * @param by
      *            Selenium By locator
      * @return List of ExtendedWebElement.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public List<ExtendedWebElement> findExtendedWebElements(By by) {
         return findExtendedWebElements(by, EXPLICIT_TIMEOUT);
     }
 
     /**
      * Find List of Extended Web Elements on page using By.
+     *
+     * @deprecated
      * 
      * @param by
      *            Selenium By locator
@@ -1205,6 +1203,7 @@ public class DriverHelper {
      *            Timeout to find
      * @return List of ExtendedWebElement.
      */
+    @Deprecated(since = "7.4.21", forRemoval = true)
     public List<ExtendedWebElement> findExtendedWebElements(final By by, long timeout) {
         List<ExtendedWebElement> extendedWebElements = new ArrayList<ExtendedWebElement>();
         List<WebElement> webElements = new ArrayList<WebElement>();
@@ -1256,9 +1255,9 @@ public class DriverHelper {
 		boolean result;
         long startMillis = 0;
 		final WebDriver drv = getDriver();
-		Wait<WebDriver> wait = new WebDriverWait(drv, timeout, RETRY_TIME)
-		        .ignoring(WebDriverException.class)
-				.ignoring(NoSuchSessionException.class);
+		
+		long retryInterval = getRetryInterval(timeout);
+		Wait<WebDriver> wait = new WebDriverWait(drv, timeout, retryInterval);
 		try {
 		    startMillis = System.currentTimeMillis();
 			wait.until(condition);
@@ -1311,5 +1310,38 @@ public class DriverHelper {
         }
         return url;
     }
-	
+    
+    private static void setPageLoadTimeout(WebDriver drv, long timeout) {
+        try {
+            drv.manage().timeouts().pageLoadTimeout(timeout, TimeUnit.SECONDS);
+        } catch (UnsupportedCommandException e) {
+            //TODO: review upcoming appium 2.0 changes
+            LOGGER.debug("Appium: Not implemented yet for pageLoad timeout!");
+        }
+        
+    }
+
+    
+    private long getPageLoadTimeout() {
+        long timeout = 300;
+        // #1705: limit pageLoadTimeout driver timeout by idleTimeout
+//        if (!R.CONFIG.get("capabilities.idleTimeout").isEmpty()) {
+//            long idleTimeout = R.CONFIG.getLong("capabilities.idleTimeout");
+//            if (idleTimeout < timeout) {
+//                timeout = idleTimeout;
+//            }
+//        }
+        return timeout;
+    }
+
+    private long getRetryInterval(long timeout) {
+        long retryInterval = RETRY_TIME;
+        if (timeout >= 3 && timeout <= 10) {
+            retryInterval = 500;
+        }
+        if (timeout > 10) {
+            retryInterval = 1000;
+        }
+        return retryInterval;
+    }
 }

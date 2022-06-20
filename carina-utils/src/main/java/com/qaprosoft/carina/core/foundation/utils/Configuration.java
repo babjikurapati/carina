@@ -96,14 +96,14 @@ public class Configuration {
         REPORT_URL("report_url"),
 
         AUTO_SCREENSHOT("auto_screenshot"),
+        
+        ALLOW_FULLSIZE_SCREENSHOT("allow_fullsize_screenshot"),
 
         EXPLICIT_TIMEOUT("explicit_timeout"),
 
         AUTO_DOWNLOAD("auto_download"),
 
         AUTO_DOWNLOAD_APPS("auto_download_apps"),
-
-        AUTO_DOWNLOAD_FOLDER("auto_download_folder"),
 
         CUSTOM_ARTIFACTS_FOLDER("custom_artifacts_folder"),
 
@@ -149,6 +149,8 @@ public class Configuration {
         
         // Amazon
         S3_BUCKET_NAME("s3_bucket_name"),
+        
+        S3_REGION("s3_region"),
 
         ACCESS_KEY_ID("access_key_id"),
 
@@ -169,18 +171,12 @@ public class Configuration {
         APPCENTER_TOKEN("appcenter_token"),
 
         // For localization parser
-
         LOCALIZATION_ENCODING("localization_encoding"),
 
         LOCALIZATION_TESTING("localization_testing"),
 
         // TLS
         TLS_KEYSECURE_LOCATION("tls_keysecure_location"),
-
-        // HealthCheck
-        HEALTH_CHECK_CLASS("health_check_class"),
-
-        HEALTH_CHECK_METHODS("health_check_methods"),
 
         UNINSTALL_RELATED_APPS("uninstall_related_apps"),
 

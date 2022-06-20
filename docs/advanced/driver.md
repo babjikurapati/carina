@@ -8,8 +8,7 @@ Supported Browsers: Chrome, Firefox, Internet Explorer, Microsoft Edge, Opera, S
 ##Initialization
 
 * **getDriver()** is the core method to start any Selenium/Appium session. It will create a RemoteWebDriver named "default" based on default capabilities from configuration.
-
-    1st call of the method in current thread should start new driver. Next calls will return existing object.
+  > 1st call of the method in current thread should start new driver. Next calls will return existing object.
 
 * **getDriver(String name)** start named driver session using default capabilities from configuration. That's allow to start several drivers (up to 3 according to `max_driver_count` property)
 
@@ -56,7 +55,7 @@ public void desiredCapsTest() {
 
 ###Capabilities 
 
-Simple key value Selenium/Appium pairs can be provided in `_config.properties` using `capabilities.name=value` , for example:
+Primitive Selenium/Appium capabilities can be provided in `_config.properties` using `capabilities.name=value`:
 ```
 capabilities.automationName=uiautomator2
 capabilities.deviceName=Samsung_Galaxy_S10
@@ -65,7 +64,25 @@ capabilities.app=https://qaprosoft.s3-us-west-2.amazonaws.com/carinademoexample.
 capabilities.newCommandTimeout=180
 ```
 
-Visit [selenium](https://github.com/SeleniumHQ/selenium/wiki/DesiredCapabilities) or [appium](https://appium.io/docs/en/writing-running-appium/caps/) to see all capabilities.
+Visit [selenium](https://www.selenium.dev/documentation/legacy/desired_capabilities/) or [appium](https://appium.io/docs/en/writing-running-appium/caps/) to see all capabilities.
+
+Most popular capabilities sets might be declared in properties files and reused via `custom_capabilities` configuration parameter.
+It might be convenient for external hub providers like Zebrunner Device Farm, BrowserStack, SauceLabs etc
+
+Collect device/browser specific capabilities and put into `src/main/resources/browserstack-iphone_12.properties`:
+
+```
+capabilities.realMobile=true
+capabilities.platformName=iOS
+capabilities.deviceName=iPhone 12
+capabilities.osVersion=14
+#capabilities.app=bs://444bd0308813ae0dc236f8cd461c02d3afa7901d
+#capabilities.browserstack.local=false
+#capabilities.appiumVersion=1.20.2
+#capabilities.deviceOrientation=portrait
+```
+
+Put into the **_config.properties** `custom_capabilities=browserstack-iphone_12.properties` to start all tests on this device.
 
 ###Options 
 
@@ -99,22 +116,24 @@ public void someTest() {
 ##Quit
 Quit driver operation is executed automatically based on driver init phase, i.e. **no need to do it inside your test code**.
 
-* `@BeforeSuite` drivers belong to all tests/classes and will be closed in `@AfterSuite` only
-* `@BeforeTest` drivers belong to all `<test>` classes and will be closed in `@AfterTest`.
-* `@BeforeClass` drivers belong to all tests inside current class and will be closed in `@AfterClass`
-* `@BeforeMethod` or inside `Test Method` drivers belong to current test method and will be closed in `@AfterMethod`
-  > Also driver is saved for all dependent test methods inside test class by default.
+* `@BeforeSuite` drivers belong to all tests/classes and will be closed at `@AfterSuite` only
+* `@BeforeTest` drivers belong to all `<test>` classes and will be closed at `@AfterTest`.
+* `@BeforeClass` drivers belong to all tests inside current class and will be closed at `@AfterClass`
+* `@BeforeMethod` or inside `Test Method` drivers belong to current test method and will be closed at `@AfterMethod`
+  > For dependent test methods Carina preserve started driver(s) by default.
 
-To quit driver forcibly if needed use **quitDriver()** or **quitDriver(name)**
+To quit driver forcibly use **quitDriver()** or **quitDriver(name)**
 
 To disable driver quit strategy completely and cotrol drivers init/quit on your own provide `forcibly_disable_driver_quit=true` or execute from any place of your test code `CarinaListener.disableDriversCleanup();`
 
 ##Restart
 * **restartDriver()** quit the current driver and start a new one with the same capabilities
 * **restartDriver(boolean isSameDevice)** quit the current driver and start a new one on the same device using `uuid` capability. It is fully compatible with [MCloud](https://github.com/zebrunner/mcloud) farm.
-##Tricks
-###Init pages and drivers in places where they are used
-The correct way:
+
+##FAQ
+**Where is a valid place to init drivers and pages?**
+
+Init pages and drivers inside test methods where they actually used. Escape declaring pages and drivers on class level as it produces extra complexity in execution, maintenance and support!
 ```
 public class TestSample implements IAbstractTest {
   @Test(){
@@ -128,7 +147,8 @@ public class TestSample implements IAbstractTest {
   }
 }
 ```
-An unwanted approach:
+
+Anti-pattern:
 ```
 public class TestSample implements IAbstractTest {
   HomePage homePage = new HomePage(driver);
@@ -148,4 +168,24 @@ public class TestSample implements IAbstractTest {
      List<ModelSpecs> specs = comparePage.compareModels("Samsung Galaxy J3", "Samsung Galaxy J5", "Samsung Galaxy J7 Pro");
   }
 }
+```
+
+**May I init page/driver on static layer?**
+
+Initialization of drivers and pages on static layer is prohibited. CarinaListener not even integrated yet on compilation stage. For details visit [#1550](https://github.com/zebrunner/carina/issues/1550).
+The earliest stage you can start driver is `@BeforeSuite()`.
+
+** How to start different tests on different devices?**
+
+Start driver with custom DesiredCapabilities to launch on different device. Also you can use `CapabilitiesLoader` to manage capabilities at run-time:
+
+```
+// Update default capabilities globally to start future drivers **for all tests** on iPhone_12 
+new CapabilitiesLoader().loadCapabilities("browserstack-iphone_12.properties");
+
+// Update default capabilities to start future drivers **for this test only** on iPhone_12 
+new CapabilitiesLoader().loadCapabilities("browserstack-iphone_12.properties", true);
+
+// start new driver with generated capabilities from properties file:
+WebDriver drv = getDriver("iPhone12", new CapabilitiesLoader().getCapabilities("browserstack-iphone_12.properties"))
 ```
